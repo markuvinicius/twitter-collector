@@ -50,7 +50,7 @@ def tw_parser():
     # Language
     l = args.l
     if (not l):
-        l = "pt"
+        l = ""
 
     # Tweet count
     if args.c:
@@ -86,9 +86,11 @@ def persist_data(tweet_list):
             """
             INSERT INTO tweets (created, author_id, followers_count, 
                                 friends_count, location, retweet_count, 
-                                source, text, tweet_id, username, tag)
+                                source, text, tweet_id, username, tag, 
+                                process_date, lang)
             VALUES (%(created)s, %(author_id)s, %(followers_count)s, %(friends_count)s, %(location)s, 
-                    %(retweet_count)s, %(source)s, %(text)s, %(tweet_id)s, %(username)s, %(tag)s)
+                    %(retweet_count)s, %(source)s, %(text)s, %(tweet_id)s, %(username)s, %(tag)s, 
+                    toDate(now()), %(lang)s )
             """,
 
             {'created': tweet['created'],
@@ -101,7 +103,9 @@ def persist_data(tweet_list):
              'author_id': tweet['author_id'],
              'location': tweet['author_loc'],
              'source': tweet['source'],
-             'tag': tweet['tag']}
+             'tag': tweet['tag'],
+             'lang': tweet['lang']
+             }
         )
 
 # TWEEPY SEARCH FUNCTION
@@ -128,6 +132,8 @@ def tw_search(api):
         twt['friends'] = tweet.author.friends_count
         twt['author_id'] = tweet.author.id
         twt['author_loc'] = tweet.author.location
+        twt['lang'] = tweet.lang
+
         twt['tag'] = qw
 
         # TECHNOLOGY INFO
