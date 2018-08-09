@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS lz.tweets (
     AND read_repair_chance = 0.0
     AND speculative_retry = '99PERCENTILE';
 
-DROP TABLE IF EXISTS most_followed_users_by_process_date;
+
 CREATE TABLE IF NOT EXISTS cz.most_followed_users_by_process_date (
     process_date date,
     followers_count bigint,
@@ -57,7 +57,7 @@ CREATE TABLE IF NOT EXISTS cz.most_followed_users_by_process_date (
     AND read_repair_chance = 0.0
     AND speculative_retry = '99PERCENTILE';
 
-DROP TABLE IF EXISTS cz.tweets_count_by_lang_tag;
+
 CREATE TABLE IF NOT EXISTS cz.tweets_count_by_lang_tag (
     language varchar,
     tag varchar,
