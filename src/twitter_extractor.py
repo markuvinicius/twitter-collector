@@ -4,9 +4,9 @@ import urllib
 import tweepy
 from cassandra.cluster import Cluster
 import re
+from configparser import ConfigParser
 
-
-# URL CLEANUP
+# URL handling
 def url_fix(s, charset='utf-8'):
     if isinstance(s, unicode):
         s = s.encode(charset, 'ignore')
@@ -15,15 +15,10 @@ def url_fix(s, charset='utf-8'):
     qs = urllib.quote_plus(qs, ':&=')
     return urlparse.urlunsplit((scheme, netloc, path, qs, anchor))
 
-# TEXT CLEANUP
-def remove_non_ascii(text):
-    return re.sub(r'[^\x00-\x7f]',r'', text)
 
-
-# COMMAND PARSER
-def tw_parser():
-    global l, c, a, qw
-
+# Read and Parse the command line arguments
+# Return values from 3 major parameters (language, auth_file, count)
+def argument_parser():
     # USE EXAMPLES:
     # =-=-=-=-=-=-=
     # % twsearch <search term>            --- searches term
@@ -31,7 +26,7 @@ def tw_parser():
     # % twsearch <search term> -l pt      --- searches term with lang=pt (Portuguese) <DEFAULT = pt>
     # % twsearch <search term> -c 100     --- searches term and returns 100 tweets (count=100) <DEFAULT = 100>
 
-    # Parse the command
+    # Parse the command line arguments
     parser = argparse.ArgumentParser(description='Twitter Search')
     parser.add_argument(action='store', dest='query', help='Search term string')
     parser.add_argument('-a', action='store', dest='a', help='Location of Auth File /usr/etc/auth.k')
@@ -39,47 +34,82 @@ def tw_parser():
     parser.add_argument('-c', action='store', dest='c', help='Tweet count (must be <100)')
     args = parser.parse_args()
 
-    qw = args.query  # Actual query word(s)
+    query = args.query  # Actual query word(s)
+    if not query:
+        print("ERROR - A valid string query must be informed")
+        exit()
 
     # auth file
-    a = args.a
-    if (not a):
+    auth_file = args.a
+    if (not auth_file):
         print("ERROR - Location for auth file must be informed")
         exit()
 
     # Language
-    l = args.l
-    if (not l):
-        l = ""
+    language = args.l
+    if (not language):
+        language = ""
 
     # Tweet count
+    count = 0
     if args.c:
-        c = int(args.c)
-        if (c > cmax):
+        count = int(args.c)
+        if (count > cmax) or ( count < 1 ):
             print ("Resetting count to ", cmax, " (maximum allowed)")
-            c = cmax
-        if (not (c) or (c < 1)):
-            c = 1
+            count = cmax
+    else:
+        count = 100
 
-    if not (args.c):
-        c = 100
+    print ("Query: Language: %s, Count: %s" % (language, count))
 
-    print ("Query: Language: %s, Count: %s" % (l, c))
+    dict_params = {'query'    : query,
+                   'auth_file': auth_file,
+                   'language' : language,
+                   'count'    : count}
 
+    return dict_params
+
+# Read the Configuration File
+def config_section_map(config,section):
+    dict1 = {}
+    options = config.options(section)
+    for option in options:
+        try:
+            dict1[option] = config.get(section, option)
+            if dict1[option] == -1:
+                print "skip: %s" % option
+        except:
+            print "exception on %s!" % option
+            dict1[option] = None
+    return dict1
 
 # AUTHENTICATION (OAuth)
 def tw_oauth(authfile):
     with open(authfile, "r") as f:
         ak = f.readlines()
     f.close()
+
     auth1 = tweepy.auth.OAuthHandler(ak[0].replace("\n", ""), ak[1].replace("\n", ""))
     auth1.set_access_token(ak[2].replace("\n", ""), ak[3].replace("\n", ""))
     return tweepy.API(auth1)
 
+
+# AUTHENTICATION (OAuth)
+def twitter_autentication(twitter_config):
+    auth1 = tweepy.auth.OAuthHandler(twitter_config['consumer_key'],
+                                     twitter_config['consumer_secret'])
+
+    auth1.set_access_token(twitter_config['key'],
+                           twitter_config['secret'])
+
+    return tweepy.API(auth1)
+
 # INSERT DATA INTO CASSANDRA
-def persist_data(tweet_list):
-    cluster = Cluster(['localhost'])
-    session = cluster.connect('lz')
+def persist_data(tweet_list, params=None):
+    host = [str(params['host'])]
+    keyspace = str(params['keyspace'])
+    cluster = Cluster(host)
+    session = cluster.connect(keyspace)
 
     for tweet in tweet_list:
         session.execute(
@@ -108,20 +138,20 @@ def persist_data(tweet_list):
              }
         )
 
-# TWEEPY SEARCH FUNCTION
-def tw_search(api):
+
+# Call the twitter api to fetch a bunch of data
+def fetch_twitter_data(api, params=None):
     counter = 0
     twitter_list=[]
 
     for tweet in tweepy.Cursor(api.search,
-                               q=qw,
-                               lang=l,
-                               count=c).items():
+                               q=params['query'],
+                               lang=params['language'],
+                               count=params['count']).items():
         twt={}
 
         # TWEET INFO
         twt['created'] = tweet.created_at
-        #twt['text'] = remove_non_ascii(tweet.text)
         twt['text'] = tweet.text
         twt['tweet_id'] = tweet.id
         twt['retwc'] = tweet.retweet_count
@@ -134,7 +164,8 @@ def tw_search(api):
         twt['author_loc'] = tweet.author.location
         twt['lang'] = tweet.lang
 
-        twt['tag'] = qw
+        # QUERY
+        twt['tag'] = params['query']
 
         # TECHNOLOGY INFO
         twt['source'] = tweet.source
@@ -142,24 +173,38 @@ def tw_search(api):
         twitter_list.append(twt)
         counter = counter + 1
 
-        if (counter == c):
+        if (counter == params['count']):
             break
 
     return twitter_list
 
 
 if __name__ == "__main__":
-    global api, cmax, locords
+    global cmax
 
     # Maximum allowed tweet count (note: Twitter sets this to ~180 per 15 minutes)
     cmax = 100
-    # OAuth key file
 
-    tw_parser()
-    api = tw_oauth(a)
-    tw_list = tw_search(api)
-    if len(tw_list)>0:
-        persist_data(tw_list)
-        print("SUCESS - Twitter Data Persisted on LZ by tag {}".format(qw))
+
+    # Parse the command line arguments
+    params = argument_parser()
+
+    # Read the configuration file
+    config = ConfigParser()
+    config.read(params['auth_file'])
+
+    # Parse Twitter autentication parameters
+    twitter_config = config_section_map(config,'TwitterSection')
+    # Parse Cassandr autentication parameters
+    cassandra_config = config_section_map(config, 'CassandraSection')
+
+    # build a twitter connection using tweepy package
+    api = twitter_autentication(twitter_config)
+
+    # fetch a list of tweets according the paramaters
+    tweet_list = fetch_twitter_data(api, params=params)
+    if len(tweet_list)>0:
+        persist_data(tweet_list, params=cassandra_config)
+        print("SUCESS - Twitter Data Persisted on LZ by tag {} - {}".format(params['query'],len(tweet_list)))
     else:
         print("WARN - There is no tweets to persist")
