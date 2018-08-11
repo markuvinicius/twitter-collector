@@ -178,7 +178,7 @@ def fetch_twitter_data(api, params=None):
 
     return twitter_list
 
-
+# main execution
 if __name__ == "__main__":
     global cmax
 

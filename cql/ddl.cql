@@ -3,6 +3,7 @@ CREATE KEYSPACE IF NOT EXISTS lz WITH replication = {'class': 'SimpleStrategy', 
 CREATE KEYSPACE IF NOT EXISTS cz WITH replication = {'class': 'SimpleStrategy', 'replication_factor': '1'}  AND durable_writes = true;
 
 CREATE TABLE IF NOT EXISTS lz.tweets (
+    tag varchar,
     created timestamp ,
     author_id bigint,
     followers_count bigint,
@@ -13,7 +14,7 @@ CREATE TABLE IF NOT EXISTS lz.tweets (
     text text,
     tweet_id bigint,
     username text,
-    tag varchar,
+
     process_date date,
     lang varchar,
     PRIMARY KEY (tag,created)
